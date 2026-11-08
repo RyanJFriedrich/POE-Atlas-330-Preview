@@ -12,7 +12,7 @@ An interactive web mockup and build planner for the redesigned radial **Path of 
 
 ## 🌟 Key Features
 
-* **Complete 877-Node Radial Map**: Accurately mapped from the high-resolution teaser screenshot.
+* **Complete 946-Node Radial Map**: Accurately mapped from teaser sources with 100% full-tree reachability.
 * **150-Point Cap Simulation**: Live tracker `[ X / 150 ]` showing allocated points and remaining allowance.
 * **Auto-Pathfinding**: Click any node across the tree; Dijkstra/BFS calculates the shortest path from the center hub and allocates all intermediate passives in a single click.
 * **Interactive Atlas Gateways (Wormholes)**: Symmetrical gate pairs (West ⇄ East, NW ⇄ SE, NE ⇄ SW) function as active cross-tree conduits. Allocate both entry and exit gates to bridge across the Atlas for 0 travel cost, with automatic Dijkstra wormhole pathfinding and orphan detection.

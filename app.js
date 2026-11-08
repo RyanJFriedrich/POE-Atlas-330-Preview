@@ -68,7 +68,7 @@
     mouseCanvasCoords: { x: 1920, y: 1080 }
   };
 
-  const STORAGE_KEY = 'poe_atlas_tree_final_100pct';
+  const STORAGE_KEY = 'poe_atlas_tree_v3_946';
   const dom = {};
 
   function init() {
@@ -760,6 +760,26 @@
     }
   }
 
+  function setSelectedNode(nid) {
+    state.selectedNodeId = nid;
+    state.selectedEdge = null;
+
+    document.querySelectorAll('.tree-node.selected-node').forEach(el => el.classList.remove('selected-node'));
+    document.querySelectorAll('.edge-line.selected-edge').forEach(el => el.classList.remove('selected-edge'));
+
+    if (nid && state.treeData.nodes[nid]) {
+      const el = document.getElementById(`node-el-${nid}`);
+      if (el) el.classList.add('selected-node');
+      selectNodeInEditor(nid);
+      const n = state.treeData.nodes[nid];
+      dom.editorHint.innerHTML = `Selected <strong>${n.name || nid}</strong>. Edit properties in the right panel, or drag to move.`;
+    } else {
+      state.selectedNodeId = null;
+      clearEditorForm();
+      dom.editorHint.innerHTML = `Tip: Click any node to select and edit. Shift+Click two nodes to toggle connecting line.`;
+    }
+  }
+
   function handleEditorCanvasClick(coords) {
     if (state.editorTool === 'chain') {
       // Place node and link to previous
@@ -767,15 +787,11 @@
       if (state.selectedNodeId && state.selectedNodeId !== newId) {
         toggleEdge(state.selectedNodeId, newId, true); // force add link
       }
-      state.selectedNodeId = newId;
-      selectNodeInEditor(newId);
+      setSelectedNode(newId);
       pushHistory(`Added and linked node ${newId}`);
     } else if (state.editorTool === 'select') {
       // Deselect
-      state.selectedNodeId = null;
-      state.selectedEdge = null;
-      clearEditorForm();
-      renderTree();
+      setSelectedNode(null);
     }
   }
 
@@ -803,8 +819,7 @@
 
     // Chain Tool (click existing node to set chain head)
     if (state.editorTool === 'chain') {
-      state.selectedNodeId = nodeId;
-      selectNodeInEditor(nodeId);
+      setSelectedNode(nodeId);
       renderTree();
       return;
     }
@@ -816,10 +831,8 @@
       return;
     }
 
-    state.selectedNodeId = nodeId;
-    state.selectedEdge = null;
-    selectNodeInEditor(nodeId);
-    renderTree();
+    // Select Tool: Click to select
+    setSelectedNode(nodeId);
   }
 
   function handleEditorEdgeClick(edgeKey) {
@@ -832,7 +845,7 @@
     }
 
     state.selectedEdge = [u, v];
-    state.selectedNodeId = null;
+    setSelectedNode(null);
     dom.editorHint.innerHTML = `Selected line <strong>${u} &harr; ${v}</strong>. Press <strong>Delete</strong> / <strong>Backspace</strong> to remove.`;
     renderEdges();
   }
@@ -848,7 +861,7 @@
     
     dom.btnDeleteNode.disabled = (nodeId === 'start_hub');
     dom.btnDuplicateNode.disabled = (nodeId === 'start_hub');
-    dom.btnDisconnectNode.disabled = false;
+    dom.btnDisconnectNode.disabled = (nodeId === 'start_hub');
 
     // Highlight active mechanic quick-tag
     dom.quickTagBtns.forEach(btn => {
@@ -858,6 +871,7 @@
 
   function clearEditorForm() {
     dom.editName.value = '';
+    dom.editMechanic.value = '';
     dom.editStats.value = '';
     dom.btnDeleteNode.disabled = true;
     dom.btnDuplicateNode.disabled = true;
@@ -872,13 +886,19 @@
 
     n.name = dom.editName.value;
     const newType = dom.editType.value;
+    const typeChanged = (n.type !== newType);
     n.type = newType;
     n.radius = TYPE_CONFIG[newType] ? TYPE_CONFIG[newType].radius : 13;
     n.mechanic = dom.editMechanic.value;
-    n.stats = dom.editStats.value.split('\n').filter(s => s.trim().length > 0);
+    n.stats = dom.editStats.value.split('\n').map(s => s.trim()).filter(s => s.length > 0);
 
     saveCustomTree();
-    renderTree();
+
+    if (typeChanged) {
+      renderTree();
+      const el = document.getElementById(`node-el-${state.selectedNodeId}`);
+      if (el) el.classList.add('selected-node');
+    }
   }
 
   function addNodeAt(x, y, type = 'travel', name = null, mechanic = 'Core', stats = null) {
@@ -893,7 +913,7 @@
       x: Math.round(x),
       y: Math.round(y),
       radius: radius,
-      stats: stats || (type === 'travel' ? ['+1% Map Modifier Effect'] : ['10% increased chance for ' + mechanic])
+      stats: stats || ['+1% Currently Unknown']
     };
 
     buildAdjacency();
@@ -1273,7 +1293,7 @@
       } else {
         const line = document.createElement('div');
         line.className = 'tooltip-stat-line';
-        line.textContent = '+1% Map Modifier Effect';
+        line.textContent = '+1% Currently Unknown';
         dom.tooltipStats.appendChild(line);
       }
 
@@ -1389,7 +1409,13 @@
       }
     });
 
+    let didDrag = false;
+    let dragStartPos = { x: 0, y: 0 };
+
     dom.viewportContainer.addEventListener('pointerdown', (e) => {
+      dragStartPos = { x: e.clientX, y: e.clientY };
+      didDrag = false;
+
       if (e.target.closest('.tree-node')) {
         const nodeEl = e.target.closest('.tree-node');
         const nid = nodeEl.getAttribute('data-id');
@@ -1399,9 +1425,7 @@
           const coords = screenToTreeCoords(e.clientX, e.clientY);
           const n = state.treeData.nodes[nid];
           state.dragOffset = { x: coords.x - n.x, y: coords.y - n.y };
-          state.selectedNodeId = nid;
-          selectNodeInEditor(nid);
-          renderTree();
+          setSelectedNode(nid);
         }
         return;
       }
@@ -1418,6 +1442,14 @@
       }
     });
 
+    // Update didDrag on pointermove
+    const origPointerMove = dom.viewportContainer.onpointermove;
+    dom.viewportContainer.addEventListener('pointermove', (e) => {
+      if (Math.hypot(e.clientX - dragStartPos.x, e.clientY - dragStartPos.y) > 4) {
+        didDrag = true;
+      }
+    });
+
     window.addEventListener('pointerup', () => {
       if (state.draggingNode) {
         state.draggingNode = null;
@@ -1431,6 +1463,11 @@
 
     // Main Click Delegation
     dom.viewportContainer.addEventListener('click', (e) => {
+      if (didDrag) {
+        didDrag = false;
+        return;
+      }
+
       // 1. Edge Click
       const edgeEl = e.target.closest('.edge-line');
       if (edgeEl && state.mode === 'editor') {
@@ -1561,10 +1598,8 @@
       }
       // Deselect / Cancel chain
       else if (key === 'escape') {
-        state.selectedNodeId = null;
-        state.selectedEdge = null;
         state.connectFirstNode = null;
-        clearEditorForm();
+        setSelectedNode(null);
         renderTree();
       }
     });
