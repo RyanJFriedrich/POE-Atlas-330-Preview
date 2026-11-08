@@ -15,6 +15,19 @@
     start:    { radius: 32, label: 'Atlas Start Hub' }
   };
 
+  // --- Atlas Gateway Symmetrical Pairs & Map ---
+  const GATEWAY_PAIRS = [
+    ['gateway_w', 'gateway_e'],
+    ['gateway_nw', 'gateway_se'],
+    ['gateway_ne', 'gateway_sw']
+  ];
+
+  const GATEWAY_MAP = new Map();
+  for (const [g1, g2] of GATEWAY_PAIRS) {
+    GATEWAY_MAP.set(g1, g2);
+    GATEWAY_MAP.set(g2, g1);
+  }
+
   // --- Global Application State ---
   const state = {
     treeData: null,
@@ -72,6 +85,7 @@
     dom.viewportGroup = document.getElementById('viewport-group');
     dom.bgImage = document.getElementById('bg-image');
     dom.edgesLayer = document.getElementById('edges-layer');
+    dom.bridgesLayer = document.getElementById('bridges-layer');
     dom.nodesLayer = document.getElementById('nodes-layer');
     
     // HUD & Controls
@@ -229,9 +243,33 @@
   // --- Rendering ---
   function renderTree() {
     renderEdges();
+    renderGatewayBridges();
     renderNodes();
     updateAllocatedVisuals();
     applyHighlights();
+  }
+
+  function renderGatewayBridges() {
+    if (!dom.bridgesLayer) return;
+    dom.bridgesLayer.innerHTML = '';
+    const nodes = state.treeData.nodes;
+
+    for (const [g1Id, g2Id] of GATEWAY_PAIRS) {
+      const n1 = nodes[g1Id];
+      const n2 = nodes[g2Id];
+      if (!n1 || !n2) continue;
+
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', n1.x);
+      line.setAttribute('y1', n1.y);
+      line.setAttribute('x2', n2.x);
+      line.setAttribute('y2', n2.y);
+      line.setAttribute('class', 'gateway-bridge');
+      line.setAttribute('data-bridge', `${g1Id}:${g2Id}`);
+      line.setAttribute('id', `bridge-${g1Id}-${g2Id}`);
+
+      dom.bridgesLayer.appendChild(line);
+    }
   }
 
   function renderEdges() {
@@ -346,6 +384,32 @@
       }
     });
 
+    // Update Gateway Wormhole Bridges
+    if (dom.bridgesLayer) {
+      const bridges = dom.bridgesLayer.querySelectorAll('.gateway-bridge');
+      bridges.forEach(line => {
+        const [u, v] = line.getAttribute('data-bridge').split(':');
+        const uAlloc = state.allocated.has(u);
+        const vAlloc = state.allocated.has(v);
+
+        line.classList.remove('active', 'standby');
+        if (uAlloc && vAlloc) {
+          line.classList.add('active');
+        } else if (uAlloc || vAlloc) {
+          line.classList.add('standby');
+        }
+      });
+    }
+
+    // Toggle active wormhole aura on paired gateway nodes
+    for (const [u, v] of GATEWAY_PAIRS) {
+      const elU = document.getElementById(`node-el-${u}`);
+      const elV = document.getElementById(`node-el-${v}`);
+      const bothAlloc = state.allocated.has(u) && state.allocated.has(v);
+      if (elU) elU.classList.toggle('wormhole-active', bothAlloc);
+      if (elV) elV.classList.toggle('wormhole-active', bothAlloc);
+    }
+
     const spent = Math.max(0, state.allocated.size - 1);
     dom.pointsCount.textContent = `${spent} / ${state.maxPoints}`;
     dom.pointsRemaining.textContent = `${state.maxPoints - spent} Points Remaining`;
@@ -420,25 +484,116 @@
     updateAllocatedVisuals();
   }
 
-  function findPathToAllocated(targetId) {
-    const queue = [[targetId]];
-    const visited = new Set([targetId]);
-
-    while (queue.length > 0) {
-      const currentPath = queue.shift();
-      const current = currentPath[currentPath.length - 1];
-
-      const neighbors = state.adjacency.get(current) || [];
-      for (const nb of neighbors) {
-        if (state.allocated.has(nb)) {
-          return currentPath;
-        }
-        if (!visited.has(nb)) {
-          visited.add(nb);
-          queue.push([...currentPath, nb]);
+  // --- Min-Priority Queue for Dijkstra Shortest-Path Search ---
+  class MinPriorityQueue {
+    constructor() {
+      this.heap = [];
+    }
+    push(item, priority) {
+      this.heap.push({ item, priority });
+      this._bubbleUp(this.heap.length - 1);
+    }
+    pop() {
+      if (this.heap.length === 0) return null;
+      const top = this.heap[0];
+      const bottom = this.heap.pop();
+      if (this.heap.length > 0) {
+        this.heap[0] = bottom;
+        this._bubbleDown(0);
+      }
+      return top;
+    }
+    isEmpty() {
+      return this.heap.length === 0;
+    }
+    _bubbleUp(idx) {
+      while (idx > 0) {
+        const pIdx = Math.floor((idx - 1) / 2);
+        if (this.heap[idx].priority < this.heap[pIdx].priority) {
+          [this.heap[idx], this.heap[pIdx]] = [this.heap[pIdx], this.heap[idx]];
+          idx = pIdx;
+        } else {
+          break;
         }
       }
     }
+    _bubbleDown(idx) {
+      const len = this.heap.length;
+      while (true) {
+        let smallest = idx;
+        const left = 2 * idx + 1;
+        const right = 2 * idx + 2;
+        if (left < len && this.heap[left].priority < this.heap[smallest].priority) {
+          smallest = left;
+        }
+        if (right < len && this.heap[right].priority < this.heap[smallest].priority) {
+          smallest = right;
+        }
+        if (smallest !== idx) {
+          [this.heap[idx], this.heap[smallest]] = [this.heap[smallest], this.heap[idx]];
+          idx = smallest;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  function findPathToAllocated(targetId) {
+    if (state.allocated.has(targetId)) return [];
+
+    const pq = new MinPriorityQueue();
+    const dist = new Map();
+    const parent = new Map();
+
+    // All currently allocated nodes start at cost 0
+    for (const allocId of state.allocated) {
+      dist.set(allocId, 0);
+      pq.push(allocId, 0);
+    }
+
+    while (!pq.isEmpty()) {
+      const { item: curr, priority: d } = pq.pop();
+      if (d > (dist.get(curr) ?? Infinity)) continue;
+
+      if (curr === targetId) {
+        // Reconstruct path of UNALLOCATED nodes from allocated boundary to targetId
+        const path = [];
+        let step = curr;
+        while (step && !state.allocated.has(step)) {
+          path.unshift(step);
+          step = parent.get(step);
+        }
+        return path;
+      }
+
+      // 1. Regular adjacent edges
+      const neighbors = state.adjacency.get(curr) || [];
+      for (const nb of neighbors) {
+        const cost = state.allocated.has(nb) ? 0 : 1;
+        const nextDist = d + cost;
+        if (nextDist < (dist.get(nb) ?? Infinity)) {
+          dist.set(nb, nextDist);
+          parent.set(nb, curr);
+          pq.push(nb, nextDist);
+        }
+      }
+
+      // 2. Gateway wormhole teleport (instant link to paired gateway)
+      if (GATEWAY_MAP.has(curr)) {
+        const partner = GATEWAY_MAP.get(curr);
+        if (state.treeData.nodes[partner]) {
+          const cost = state.allocated.has(partner) ? 0 : 1;
+          const nextDist = d + cost;
+          if (nextDist < (dist.get(partner) ?? Infinity)) {
+            dist.set(partner, nextDist);
+            parent.set(partner, curr);
+            pq.push(partner, nextDist);
+          }
+        }
+      }
+    }
+
     return null;
   }
 
@@ -477,11 +632,23 @@
 
     while (queue.length > 0) {
       const curr = queue.shift();
+
+      // 1. Regular adjacent edges
       const neighbors = state.adjacency.get(curr) || [];
       for (const nb of neighbors) {
         if (allocatedSet.has(nb) && !reachable.has(nb)) {
           reachable.add(nb);
           queue.push(nb);
+        }
+      }
+
+      // 2. Gateway wormhole bridge:
+      // Both curr and its partner MUST be in allocatedSet to cross!
+      if (GATEWAY_MAP.has(curr)) {
+        const partner = GATEWAY_MAP.get(curr);
+        if (state.treeData.nodes[partner] && allocatedSet.has(partner) && !reachable.has(partner)) {
+          reachable.add(partner);
+          queue.push(partner);
         }
       }
     }
@@ -1008,34 +1175,111 @@
   }
 
   // --- Tooltip & Stats Summary ---
+  let activeHoveredGatewayBridge = null;
+
+  function handleGatewayHover(nodeId) {
+    if (!GATEWAY_MAP.has(nodeId)) return;
+    const partnerId = GATEWAY_MAP.get(nodeId);
+
+    const el1 = document.getElementById(`node-el-${nodeId}`);
+    const el2 = document.getElementById(`node-el-${partnerId}`);
+    if (el1) el1.classList.add('gateway-hovered');
+    if (el2) el2.classList.add('gateway-hovered');
+
+    const bridgeEl = document.getElementById(`bridge-${nodeId}-${partnerId}`) ||
+                     document.getElementById(`bridge-${partnerId}-${nodeId}`);
+    if (bridgeEl) {
+      bridgeEl.classList.add('hovered');
+      activeHoveredGatewayBridge = bridgeEl;
+    }
+  }
+
+  function clearGatewayHover() {
+    document.querySelectorAll('.tree-node.gateway-hovered').forEach(el => el.classList.remove('gateway-hovered'));
+    if (activeHoveredGatewayBridge) {
+      activeHoveredGatewayBridge.classList.remove('hovered');
+      activeHoveredGatewayBridge = null;
+    }
+  }
+
   function showTooltip(nodeId, clientX, clientY) {
     if (state.mode === 'editor') return;
     const n = state.treeData.nodes[nodeId];
     if (!n) return;
+
+    clearGatewayHover();
+    if (GATEWAY_MAP.has(nodeId)) {
+      handleGatewayHover(nodeId);
+    }
 
     dom.tooltipTitle.textContent = n.name || 'Passive Skill';
     dom.tooltipType.textContent = (n.type || 'Travel').toUpperCase();
     dom.tooltipType.className = `tooltip-badge badge-${n.type}`;
     dom.tooltipMech.textContent = n.mechanic || 'Atlas';
 
+    const isAlloc = state.allocated.has(nodeId);
     dom.tooltipStats.innerHTML = '';
-    if (n.stats && n.stats.length > 0) {
-      for (const s of n.stats) {
+
+    const isGateway = n.type === 'gateway' || GATEWAY_MAP.has(nodeId);
+    if (isGateway && GATEWAY_MAP.has(nodeId)) {
+      const partnerId = GATEWAY_MAP.get(nodeId);
+      const partnerNode = state.treeData.nodes[partnerId];
+      const partnerName = partnerNode ? partnerNode.name : partnerId;
+      const isPartnerAlloc = state.allocated.has(partnerId);
+
+      const addStat = (text, color = '#f5d0fe') => {
         const line = document.createElement('div');
         line.className = 'tooltip-stat-line';
-        line.textContent = s;
+        line.style.color = color;
+        line.textContent = text;
         dom.tooltipStats.appendChild(line);
+      };
+
+      if (isAlloc && isPartnerAlloc) {
+        addStat(`✦ Active Wormhole Conduit to ${partnerName}`, '#e879f9');
+        addStat(`✦ 0 travel point cost across the Atlas tree`, '#f0abfc');
+      } else if (isAlloc && !isPartnerAlloc) {
+        addStat(`✦ Paired with ${partnerName}`, '#c084fc');
+        addStat(`✦ Wormhole Inactive: Allocate ${partnerName} to activate`, '#fcd34d');
+      } else if (!isAlloc && isPartnerAlloc) {
+        addStat(`✦ Paired with ${partnerName} (Allocated!)`, '#38bdf8');
+        addStat(`✦ Click to allocate for 1 point and open wormhole link`, '#7dd3fc');
+      } else {
+        addStat(`✦ Paired with ${partnerName}`, '#c084fc');
+        addStat(`✦ Allocate both gateways to bridge across the Atlas`, '#94a3b8');
+      }
+
+      if (isAlloc && isPartnerAlloc) {
+        dom.tooltipStatus.textContent = '● Wormhole Active (Click to unallocate)';
+        dom.tooltipStatus.style.color = '#e879f9';
+      } else if (isAlloc) {
+        dom.tooltipStatus.textContent = '● Gateway Allocated (Awaiting partner allocation)';
+        dom.tooltipStatus.style.color = '#f59e0b';
+      } else if (isPartnerAlloc) {
+        dom.tooltipStatus.textContent = '○ Ready to Connect (1 point to bridge)';
+        dom.tooltipStatus.style.color = '#38bdf8';
+      } else {
+        dom.tooltipStatus.textContent = '○ Unallocated Gateway';
+        dom.tooltipStatus.style.color = 'var(--poe-text-dim)';
       }
     } else {
-      const line = document.createElement('div');
-      line.className = 'tooltip-stat-line';
-      line.textContent = '+1% Map Modifier Effect';
-      dom.tooltipStats.appendChild(line);
-    }
+      if (n.stats && n.stats.length > 0) {
+        for (const s of n.stats) {
+          const line = document.createElement('div');
+          line.className = 'tooltip-stat-line';
+          line.textContent = s;
+          dom.tooltipStats.appendChild(line);
+        }
+      } else {
+        const line = document.createElement('div');
+        line.className = 'tooltip-stat-line';
+        line.textContent = '+1% Map Modifier Effect';
+        dom.tooltipStats.appendChild(line);
+      }
 
-    const isAlloc = state.allocated.has(nodeId);
-    dom.tooltipStatus.textContent = isAlloc ? '✓ Allocated (Click to unallocate)' : '○ Unallocated (Click to allocate)';
-    dom.tooltipStatus.style.color = isAlloc ? 'var(--poe-cyan)' : 'var(--poe-text-dim)';
+      dom.tooltipStatus.textContent = isAlloc ? '✓ Allocated (Click to unallocate)' : '○ Unallocated (Click to allocate)';
+      dom.tooltipStatus.style.color = isAlloc ? 'var(--poe-cyan)' : 'var(--poe-text-dim)';
+    }
 
     dom.tooltip.style.left = `${clientX + 14}px`;
     dom.tooltip.style.top = `${clientY + 14}px`;
@@ -1044,6 +1288,7 @@
 
   function hideTooltip() {
     dom.tooltip.style.display = 'none';
+    clearGatewayHover();
   }
 
   function renderStatsDrawer() {
@@ -1088,6 +1333,22 @@
       }
       for (const [st, num] of Object.entries(summaryStats)) {
         html += `<div class="stat-item">${num > 1 ? `(${num}x) ` : ''}${st}</div>`;
+      }
+    }
+
+    // Active Gateway Wormholes Section
+    const activeGateways = [];
+    for (const [g1, g2] of GATEWAY_PAIRS) {
+      if (state.allocated.has(g1) && state.allocated.has(g2)) {
+        const n1 = state.treeData.nodes[g1];
+        const n2 = state.treeData.nodes[g2];
+        activeGateways.push(`${n1 ? n1.name : g1} ⇄ ${n2 ? n2.name : g2}`);
+      }
+    }
+    if (activeGateways.length > 0) {
+      html += `<div class="stat-section-title" style="margin-top:14px; color: #e879f9;">Active Gateway Wormholes</div>`;
+      for (const pairStr of activeGateways) {
+        html += `<div class="stat-item" style="color: #f5d0fe; border-left: 2px solid #e879f9; padding-left: 6px;">✦ ${pairStr}</div>`;
       }
     }
 

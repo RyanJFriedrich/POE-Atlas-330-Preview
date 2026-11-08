@@ -517,6 +517,77 @@ body {
   filter: drop-shadow(0 0 12px rgba(232, 121, 249, 0.95)) !important;
 }
 
+.tree-node.node-gateway.wormhole-active .node-frame {
+  stroke: #fdf4ff !important;
+  fill: rgba(232, 121, 249, 0.75) !important;
+  animation: gatewayNodePulse 2.2s infinite alternate ease-in-out;
+}
+
+.tree-node.gateway-hovered .node-frame {
+  stroke: #ffffff !important;
+  filter: drop-shadow(0 0 16px #e879f9) !important;
+}
+
+/* Gateway Wormhole Bridges */
+.gateway-bridge {
+  stroke: rgba(168, 85, 247, 0.25);
+  stroke-width: 2px;
+  stroke-dasharray: 6 8;
+  pointer-events: none;
+  transition: stroke 0.3s ease, stroke-width 0.3s ease, opacity 0.3s ease;
+}
+
+.gateway-bridge.standby {
+  stroke: rgba(192, 132, 252, 0.65);
+  stroke-width: 2.5px;
+  stroke-dasharray: 8 6;
+  opacity: 0.8;
+  animation: gatewayPulse 2.2s infinite ease-in-out;
+}
+
+.gateway-bridge.active {
+  stroke: #f0abfc;
+  stroke-width: 4px;
+  stroke-dasharray: 12 8;
+  filter: drop-shadow(0 0 8px #d946ef) drop-shadow(0 0 16px rgba(217, 70, 239, 0.7));
+  opacity: 1;
+  animation: gatewayWormhole 1.6s linear infinite;
+}
+
+.gateway-bridge.hovered {
+  stroke: #fdf4ff !important;
+  stroke-width: 3.5px !important;
+  filter: drop-shadow(0 0 10px #e879f9) !important;
+  opacity: 1 !important;
+}
+
+@keyframes gatewayWormhole {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -40px;
+  }
+}
+
+@keyframes gatewayPulse {
+  0%, 100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes gatewayNodePulse {
+  0% {
+    filter: drop-shadow(0 0 12px #e879f9) drop-shadow(0 0 20px rgba(168, 85, 247, 0.7));
+  }
+  100% {
+    filter: drop-shadow(0 0 20px #f0abfc) drop-shadow(0 0 34px rgba(217, 70, 239, 1));
+  }
+}
+
 /* Notables: slightly thicker subtle border */
 .tree-node.node-notable .node-frame {
   stroke: rgba(255, 215, 120, 0.85);
