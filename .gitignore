@@ -1,0 +1,22 @@
+# Operating System & Editor Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+*.tmp
+*.bak
+.vscode/
+.idea/
+
+# Python & Node artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+node_modules/
+
+# Intermediate crops & test outputs
+*.jpg
+crop_*.png
+test_*.png

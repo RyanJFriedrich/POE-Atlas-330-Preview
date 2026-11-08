@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Path of Exile - Atlas Skill Tree Mockup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Segoe+UI:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top Navigation & Controls HUD -->
+  <header id="top-hud">
+    <div class="hud-group">
+      <div class="brand-title">
+        <span>ATLAS PASSIVE TREE</span>
+        <span class="brand-badge">Patch Preview</span>
+      </div>
+      <button id="btn-stats" class="poe-btn" title="View active passive stats and breakdown">
+        <span>📊 View Stats</span>
+      </button>
+    </div>
+
+    <!-- Center Points Counter -->
+    <div class="points-counter-box">
+      <div class="points-text" id="points-count">0 / 150</div>
+      <div class="points-remaining" id="points-remaining">150 Points Remaining</div>
+    </div>
+
+    <!-- Right Controls -->
+    <div class="hud-group">
+      <div class="search-wrapper">
+        <input type="text" id="search-input" class="search-input" placeholder="Search node or mechanic..." autocomplete="off">
+        <button id="search-clear" class="search-clear" title="Clear search">&times;</button>
+      </div>
+
+      <button id="btn-undo" class="poe-btn" disabled title="Undo (Ctrl+Z)">↶ Undo</button>
+      <button id="btn-redo" class="poe-btn" disabled title="Redo (Ctrl+Y)">↷ Redo</button>
+      <button id="btn-reset" class="poe-btn" title="Reset all points">↺ Reset</button>
+      <button id="btn-mode" class="poe-btn primary" title="Switch between Planner and Fast Calibration Editor">Mode: Planner</button>
+    </div>
+  </header>
+
+  <!-- Mechanic Quick-Filter Bar -->
+  <nav id="filter-bar"></nav>
+
+  <!-- Dedicated Editor Floating Toolbar (Visible in Editor Mode) -->
+  <div id="editor-toolbar" class="editor-toolbar">
+    <div class="toolbar-title">EDITOR TOOLS</div>
+    
+    <button id="tool-select" class="tool-btn active" title="Select / Move Node (HotKey: V)">
+      <span class="tool-icon">🖐</span>
+      <span class="tool-label">Select (V)</span>
+    </button>
+    
+    <button id="tool-chain" class="tool-btn" title="Chain-Add Nodes: Click canvas to place & auto-link! (HotKey: A)">
+      <span class="tool-icon">✏️</span>
+      <span class="tool-label">Add / Chain (A)</span>
+    </button>
+    
+    <button id="tool-connect" class="tool-btn" title="Link / Unlink: Click node 1, then node 2 to toggle link (HotKey: C)">
+      <span class="tool-icon">🔗</span>
+      <span class="tool-label">Connect (C)</span>
+    </button>
+    
+    <button id="tool-delete" class="tool-btn" title="Delete: Click any node or link to remove (HotKey: X)">
+      <span class="tool-icon">✂️</span>
+      <span class="tool-label">Delete (X)</span>
+    </button>
+    
+    <button id="tool-duplicate" class="tool-btn" title="Duplicate selected node at mouse (HotKey: D)">
+      <span class="tool-icon">📋</span>
+      <span class="tool-label">Duplicate (D)</span>
+    </button>
+
+    <div class="toolbar-divider"></div>
+
+    <div class="toolbar-label-mini">NEXT / SELECTED TYPE:</div>
+    <div class="tool-type-group">
+      <button class="type-btn active" data-type="travel" title="Small Passive (Hotkey: 1)">1: Travel</button>
+      <button class="type-btn" data-type="notable" title="Notable Passive (Hotkey: 2)">2: Notable</button>
+      <button class="type-btn" data-type="keystone" title="Keystone Passive (Hotkey: 3)">3: Keystone</button>
+      <button class="type-btn" data-type="gateway" title="Atlas Gateway (Hotkey: 4)">4: Gateway</button>
+    </div>
+  </div>
+
+  <!-- Main Viewport -->
+  <main id="viewport-container">
+    <svg id="tree-svg" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <!-- Blue glow for allocated nodes and edges -->
+        <filter id="glow-cyan" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="6" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <!-- Gold glow for notable nodes -->
+        <filter id="glow-gold" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="5" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
+      <g id="viewport-group">
+        <!-- High-res background image overlay -->
+        <image id="bg-image" href="bg.webp" x="0" y="0" width="3840" height="2160" opacity="0.45" />
+        <!-- Graph Connections Layer -->
+        <g id="edges-layer"></g>
+        <!-- Interactive Nodes Layer -->
+        <g id="nodes-layer"></g>
+      </g>
+    </svg>
+
+    <!-- Floating Zoom Controls -->
+    <div id="zoom-controls">
+      <button id="btn-zoom-in" class="poe-btn zoom-btn" title="Zoom in">+</button>
+      <button id="btn-zoom-out" class="poe-btn zoom-btn" title="Zoom out">&minus;</button>
+      <button id="btn-zoom-reset" class="poe-btn zoom-btn" title="Reset view to center origin">⊙</button>
+    </div>
+  </main>
+
+  <!-- Bottom Helper Bar -->
+  <footer id="bottom-hud">
+    <div class="hud-group" style="font-size: 0.75rem; color: var(--poe-text-dim);">
+      <span id="editor-hint">Tip: Click any node to auto-allocate shortest path. Shift+Click to trim/unallocate branches.</span>
+    </div>
+
+    <!-- Background Opacity Slider -->
+    <div class="hud-group" style="align-items: center; gap: 8px;">
+      <span style="font-size: 0.75rem; color: var(--poe-gold);">Background Image:</span>
+      <input type="range" id="bg-slider" min="0" max="100" value="45" style="width: 110px; cursor: pointer;">
+      <span id="bg-value" style="font-size: 0.75rem; color: var(--poe-text); min-width: 32px;">45%</span>
+    </div>
+  </footer>
+
+  <!-- Left Drawer: Active Stats & Point Breakdown -->
+  <aside id="stats-drawer" class="drawer">
+    <div class="drawer-header">
+      <div class="drawer-title">ALLOCATED PASSIVES</div>
+      <button id="close-stats" class="drawer-close" title="Close stats">&times;</button>
+    </div>
+    <div class="drawer-content" id="stats-content">
+      <!-- Dynamically filled by app.js -->
+    </div>
+  </aside>
+
+  <!-- Right Drawer: Visual Calibration Editor & Tree Scaffolding -->
+  <aside id="editor-drawer" class="drawer">
+    <div class="drawer-header">
+      <div class="drawer-title">NODE & TREE INSPECTOR</div>
+      <button id="close-editor" class="drawer-close" title="Close editor">&times;</button>
+    </div>
+    <div class="drawer-content">
+
+      <!-- Selected Node Properties -->
+      <div class="stat-section-title">Selected Node Details</div>
+      
+      <div class="editor-field">
+        <label>Node Name</label>
+        <input type="text" id="edit-node-name" placeholder="Select a node...">
+      </div>
+
+      <div class="editor-field">
+        <label>Type / Size (Auto-Scales Circle)</label>
+        <select id="edit-node-type">
+          <option value="travel">Travel / Small Passive (13px)</option>
+          <option value="notable">Notable Passive (20px)</option>
+          <option value="keystone">Keystone Passive (30px)</option>
+          <option value="gateway">Atlas Gateway (24px)</option>
+          <option value="start">Atlas Start Hub (32px)</option>
+        </select>
+      </div>
+
+      <div class="editor-field">
+        <label>Game Mechanic / Category</label>
+        <input type="text" id="edit-node-mechanic" placeholder="e.g. Abyss, Harvest, Legion...">
+        <div class="quick-mechanic-tags">
+          <button type="button" class="tag-btn" data-mech="Core">Core</button>
+          <button type="button" class="tag-btn" data-mech="Abyss">Abyss</button>
+          <button type="button" class="tag-btn" data-mech="Harvest">Harvest</button>
+          <button type="button" class="tag-btn" data-mech="Legion">Legion</button>
+          <button type="button" class="tag-btn" data-mech="Delirium">Delirium</button>
+          <button type="button" class="tag-btn" data-mech="Breach">Breach</button>
+          <button type="button" class="tag-btn" data-mech="Blight">Blight</button>
+          <button type="button" class="tag-btn" data-mech="Expedition">Expedition</button>
+          <button type="button" class="tag-btn" data-mech="Ritual">Ritual</button>
+          <button type="button" class="tag-btn" data-mech="Bosses / Eldritch">Bosses</button>
+          <button type="button" class="tag-btn" data-mech="Delve & Sulphite">Delve</button>
+          <button type="button" class="tag-btn" data-mech="Incursion">Incursion</button>
+          <button type="button" class="tag-btn" data-mech="Thread / Utility">Thread</button>
+        </div>
+      </div>
+
+      <div class="editor-field">
+        <label>Passive Stat Modifiers (one per line)</label>
+        <textarea id="edit-node-stats" rows="3" placeholder="+1% Map Quantity..."></textarea>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 10px;">
+        <button id="btn-duplicate-node" class="poe-btn" style="flex: 1;" disabled>📋 Duplicate</button>
+        <button id="btn-disconnect-node" class="poe-btn" style="flex: 1;" disabled title="Remove all lines connected to this node">Unlink All</button>
+        <button id="btn-delete-node" class="poe-btn" style="flex: 1; border-color: var(--poe-red); color: #fca5a5;" disabled>Delete</button>
+      </div>
+
+      <hr style="border: 0; border-top: 1px solid rgba(201,160,80,0.2); margin: 18px 0;">
+
+      <!-- Tree Scaffolding & Cleanup Tools -->
+      <div class="stat-section-title">Tree Scaffolding Tools</div>
+      <p style="font-size: 0.72rem; color: var(--poe-text-dim); margin-bottom: 8px;">
+        Fix messy lines or scaffold the astrolabe web in 1 click:
+      </p>
+
+      <button id="btn-scaffold-radial" class="poe-btn" style="width: 100%; margin-bottom: 8px; border-color: var(--poe-gold-bright);" title="Builds the clean 8 radial spokes and concentric rings">
+        🌟 Generate Clean Radial Astrolabe Web
+      </button>
+
+      <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+        <button id="btn-clear-lines" class="poe-btn" style="flex: 1;" title="Deletes all connecting lines but keeps placed nodes">
+          ✂️ Clear All Lines
+        </button>
+        <button id="btn-clear-all" class="poe-btn" style="flex: 1; border-color: var(--poe-red);" title="Wipes all nodes except Center Hub">
+          🗑️ Blank Canvas
+        </button>
+      </div>
+
+      <hr style="border: 0; border-top: 1px solid rgba(201,160,80,0.2); margin: 18px 0;">
+
+      <!-- Dataset Import / Export -->
+      <div class="stat-section-title">Save & Export Dataset</div>
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <button id="btn-export-json" class="poe-btn" style="flex: 1;">📥 Export JSON</button>
+        <button id="btn-import-json" class="poe-btn" style="flex: 1;">📤 Import JSON</button>
+        <input type="file" id="file-input" accept=".json" style="display: none;">
+      </div>
+      <button id="btn-revert-clean" class="poe-btn" style="margin-top: 10px; width: 100%; border-color: #64748b;">↺ Reset to Default Dataset</button>
+    </div>
+  </aside>
+
+  <!-- Floating Hover Tooltip -->
+  <div id="node-tooltip">
+    <div class="tooltip-header">
+      <div id="tooltip-title" class="tooltip-title">Node Title</div>
+      <div class="tooltip-badges">
+        <span id="tooltip-type" class="tooltip-badge badge-travel">TRAVEL</span>
+        <span id="tooltip-mech" class="tooltip-badge badge-notable">HARVEST</span>
+      </div>
+    </div>
+    <div id="tooltip-stats" class="tooltip-stats"></div>
+    <div id="tooltip-status" class="tooltip-allocated-status">○ Unallocated (Click to allocate)</div>
+  </div>
+
+  <!-- Modal for Orphan / Disconnect Warning -->
+  <div id="orphan-modal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-title">Unallocate Branch?</div>
+      <div id="modal-orphan-text" class="modal-body"></div>
+      <div class="modal-actions">
+        <button id="btn-modal-confirm" class="poe-btn primary">Unallocate All Dependent</button>
+        <button id="btn-modal-cancel" class="poe-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load Default Tree Data and Main Application Engine -->
+  <script src="tree_data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
